@@ -17,6 +17,8 @@ const TokenABI = [
   "function balanceOf(address account) public view returns (uint256)",
   "function symbol() public view returns (string)",
   "function approve(address spender, uint256 amount) public returns (bool)",
+  "function transferOwnership(address newOwner) public",
+  "function owner() public view returns (address)",
 ];
 
 const ReserveABI = [
@@ -72,6 +74,8 @@ const TokenFactory = () => {
   const [totalUnderwriting, setTotalUnderwriting] = useState("0");
   const [totalRewards, setTotalRewards] = useState("0");
   const [isLoading, setIsLoading] = useState(false);
+  const [newTokenOwner, setNewTokenOwner] = useState("");
+  const [tokenOwner, setTokenOwner] = useState("");
 
   // Validasi alamat Ethereum
   const isValidAddress = (address) => ethers.utils.isAddress(address);
@@ -162,6 +166,22 @@ const TokenFactory = () => {
     }
   };
 
+  const checkTokenOwner = async () => {
+    try {
+      if (!provider || !selectedToken) {
+        alert("Pilih token terlebih dahulu!");
+        return;
+      }
+      const token = new ethers.Contract(selectedToken, TokenABI, provider);
+      const owner = await token.owner();
+      setTokenOwner(owner);
+      alert(`Owner of token ${selectedToken}: ${owner}`);
+    } catch (error) {
+      console.error("Error checking token owner:", error);
+      alert(`Failed to check token owner: ${error.message}`);
+    }
+  };
+
   const mintToken = async () => {
     try {
       if (
@@ -211,6 +231,32 @@ const TokenFactory = () => {
     } catch (error) {
       console.error("Error burning token:", error);
       alert(`Failed to burn token: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const transferTokenOwnership = async () => {
+    try {
+      if (
+        !provider ||
+        !selectedToken ||
+        !newTokenOwner ||
+        !isValidAddress(newTokenOwner)
+      ) {
+        alert("Pilih token dan masukkan alamat owner baru yang valid!");
+        return;
+      }
+      setIsLoading(true);
+      const signer = provider.getSigner();
+      const token = new ethers.Contract(selectedToken, TokenABI, signer);
+      const tx = await token.transferOwnership(newTokenOwner);
+      await tx.wait();
+      setNewTokenOwner("");
+      alert("Token ownership transferred successfully!");
+    } catch (error) {
+      console.error("Error transferring token ownership:", error);
+      alert(`Failed to transfer token ownership: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -675,6 +721,21 @@ const TokenFactory = () => {
                 >
                   {isLoading ? "Processing..." : "Burn Token"}
                 </button>
+                <input
+                  type="text"
+                  placeholder="New Token Owner Address"
+                  className="w-full p-2 border rounded"
+                  value={newTokenOwner}
+                  onChange={(e) => setNewTokenOwner(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={transferTokenOwnership}
+                  className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 w-full disabled:bg-gray-300"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Processing..." : "Transfer Token Ownership"}
+                </button>
               </div>
             </div>
 
@@ -806,7 +867,7 @@ const TokenFactory = () => {
             </div>
 
             {/* Admin Controls Section */}
-            <div className="bg-white p-6 rounded-lg shadow">
+            {/* <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-4">Admin Controls</h2>
               <div className="space-y-4">
                 <p>Total Tokens Owned: {userTokenCount}</p>
@@ -842,7 +903,7 @@ const TokenFactory = () => {
                   {isLoading ? "Processing..." : "Transfer Ownership"}
                 </button>
               </div>
-            </div>
+            </div> */}
 
             {/* User Tokens Section */}
             <div className="bg-white p-6 rounded-lg shadow">
@@ -867,6 +928,14 @@ const TokenFactory = () => {
                     </div>
                   ))
                 )}
+                <button
+                  onClick={checkTokenOwner}
+                  className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 w-full disabled:bg-gray-300"
+                  disabled={isLoading || !selectedToken}
+                >
+                  {isLoading ? "Processing..." : "Check Token Owner"}
+                </button>
+                {tokenOwner && <p>Token Owner: {tokenOwner}</p>}
               </div>
             </div>
           </div>
