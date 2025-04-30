@@ -43,10 +43,10 @@ const VeristableAVSABI = [
   "function unclaimedRewards(address token, address underwriter) public view returns (uint128)",
 ];
 
-// Alamat Kontrak di Pharos Network
-const factoryAddress = "0x5418fc891317C20f923ccB431d9B040D14987bD8";
+// Alamat Kontrak di Pharos Network (NEW)
+const factoryAddress = "0x9C34c7d588C2db8f5f4626C5e8C6E51cffFDF9e1";
 const reserveAddress = "0x32e26c6880e652599A20CF8eb672FDd9179114FC";
-const veristableAVSAddress = "0x7F3AC11808D1ADd56Abe48603D7ee16cAB970060";
+const veristableAVSAddress = "0x9Ec9eb3E56B0B66948dB51ce98A56cA7a5b49Ad7";
 
 const TokenFactory = () => {
   // State Management
@@ -867,7 +867,7 @@ const TokenFactory = () => {
             </div>
 
             {/* Admin Controls Section */}
-            {/* <div className="bg-white p-6 rounded-lg shadow">
+            <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-4">Admin Controls</h2>
               <div className="space-y-4">
                 <p>Total Tokens Owned: {userTokenCount}</p>
@@ -903,7 +903,7 @@ const TokenFactory = () => {
                   {isLoading ? "Processing..." : "Transfer Ownership"}
                 </button>
               </div>
-            </div> */}
+            </div>
 
             {/* User Tokens Section */}
             <div className="bg-white p-6 rounded-lg shadow">
