@@ -45,7 +45,7 @@ const VeristableAVSABI = [
 
 // Alamat Kontrak di Pharos Network (NEW)
 const factoryAddress = "0x9C34c7d588C2db8f5f4626C5e8C6E51cffFDF9e1";
-const reserveAddress = "0x32e26c6880e652599A20CF8eb672FDd9179114FC";
+const reserveAddress = "0xb080914D90A76EC677a9d288e9BF03B9a052769d";
 const veristableAVSAddress = "0x9Ec9eb3E56B0B66948dB51ce98A56cA7a5b49Ad7";
 
 const TokenFactory = () => {
