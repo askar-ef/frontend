@@ -10,7 +10,6 @@ const TokenFactoryABI = [
   "function getUserTokenCount(address user) public view returns (uint256)",
 ];
 
-// by grok
 const TokenABI = [
   "function mint(address to, uint256 amount) public",
   "function burn(uint256 amount) public",
@@ -28,25 +27,26 @@ const ReserveABI = [
 ];
 
 const VeristableAVSABI = [
-  "function underwrite(address token, uint128 amount) external",
-  "function withdraw(address token, uint128 amount) external",
-  "function claimRewards(address token) external",
-  "function depositRewards(address token, uint128 amount) public",
-  "function pause() public",
-  "function unpause() public",
-  "function transferOwnership(address newOwner) public",
-  "function paused() public view returns (bool)",
-  "function owner() public view returns (address)",
-  "function underwritingAmounts(address token, address underwriter) public view returns (uint128)",
-  "function totalUnderwriting(address token) public view returns (uint128)",
-  "function totalRewards(address token) public view returns (uint128)",
-  "function unclaimedRewards(address token, address underwriter) public view returns (uint128)",
+  "function stakeForToken(address token) external payable",
+  "function unstakeFromToken(address token, uint256 amount) external",
+  "function claimTokenRewards(address token) external",
+  "function distributeTokenRewards(address token) external payable",
+  "function pause() external",
+  "function unpause() external",
+  "function transferOwnership(address newOwner) external",
+  "function paused() external view returns (bool)",
+  "function owner() external view returns (address)",
+  "function tokenStakes(address token, address staker) external view returns (uint256)",
+  "function totalTokenStakes(address token) external view returns (uint256)",
+  "function tokenRewardsPools(address token) external view returns (uint256)",
+  "function pendingTokenRewards(address token, address staker) external view returns (uint256)",
+  "function MIN_TOKEN_STAKE() external view returns (uint256)",
 ];
 
-// Alamat Kontrak di Pharos Network (NEW)
+// Alamat Kontrak di Pharos Network
 const factoryAddress = "0x9C34c7d588C2db8f5f4626C5e8C6E51cffFDF9e1";
 const reserveAddress = "0xb080914D90A76EC677a9d288e9BF03B9a052769d";
-const veristableAVSAddress = "0x9Ec9eb3E56B0B66948dB51ce98A56cA7a5b49Ad7";
+const veristableAVSAddress = "0xfDb408556Fb995C105Fb98dd4e682322d5Cf68b3";
 
 const TokenFactory = () => {
   // State Management
@@ -76,6 +76,13 @@ const TokenFactory = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [newTokenOwner, setNewTokenOwner] = useState("");
   const [tokenOwner, setTokenOwner] = useState("");
+  const [ethStake, setEthStake] = useState("0");
+  const [totalEthStaked, setTotalEthStaked] = useState("0");
+  const [ethRewardsPool, setEthRewardsPool] = useState("0");
+  const [pendingRewards, setPendingRewards] = useState("0");
+  const [stakeAmount, setStakeAmount] = useState("");
+  const [unstakeAmount, setUnstakeAmount] = useState("");
+  const [minEthStake, setMinEthStake] = useState("0");
 
   // Validasi alamat Ethereum
   const isValidAddress = (address) => ethers.utils.isAddress(address);
@@ -302,14 +309,15 @@ const TokenFactory = () => {
         reserve.getLastUpdateTimestamp(),
       ]);
       setReserveBalance(ethers.utils.formatEther(balance));
-      setLastUpdateTimestamp(new Date(timestamp * 1000).toLocaleString());
+      setLastUpdateTimestamp(
+        new Date(Number(timestamp) * 1000).toLocaleString()
+      );
     } catch (error) {
       console.error("Error getting reserve balance:", error);
     }
   };
 
   // Underwriting Functions
-  // by grok
   const underwriteTokens = async () => {
     try {
       if (
@@ -335,7 +343,7 @@ const TokenFactory = () => {
         veristableAVSAddress,
         ethers.utils.parseEther(underwriteAmount)
       );
-      await approveTx.wait(); // Tunggu hingga transaksi approve dikonfirmasi
+      await approveTx.wait();
 
       // Panggil fungsi underwrite
       const underwriteTx = await avs.underwrite(
@@ -449,6 +457,35 @@ const TokenFactory = () => {
       alert(`Failed to deposit rewards: ${error.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const updateTokenStakingInfo = async (tokenAddress) => {
+    if (!provider || !account || !tokenAddress) return;
+
+    try {
+      const avs = new ethers.Contract(
+        veristableAVSAddress,
+        VeristableAVSABI,
+        provider
+      );
+
+      const [userStake, totalStaked, rewardsPool, pending, minStake] =
+        await Promise.all([
+          avs.tokenStakes(tokenAddress, account),
+          avs.totalTokenStakes(tokenAddress),
+          avs.tokenRewardsPools(tokenAddress),
+          avs.pendingTokenRewards(tokenAddress, account),
+          avs.MIN_TOKEN_STAKE(),
+        ]);
+
+      setEthStake(ethers.utils.formatEther(userStake));
+      setTotalEthStaked(ethers.utils.formatEther(totalStaked));
+      setEthRewardsPool(ethers.utils.formatEther(rewardsPool));
+      setPendingRewards(ethers.utils.formatEther(pending));
+      setMinEthStake(ethers.utils.formatEther(minStake));
+    } catch (error) {
+      console.error("Error updating token staking info:", error);
     }
   };
 
@@ -607,13 +644,169 @@ const TokenFactory = () => {
     }
   };
 
-  // Update info saat selectedToken berubah
-  useEffect(() => {
-    if (selectedToken && provider && account) {
-      getReserveBalance(selectedToken);
-      getTokenInfo(selectedToken);
+  // Staking Functions
+  const stakeForToken = async () => {
+    try {
+      if (
+        !provider ||
+        !selectedToken ||
+        !stakeAmount ||
+        parseFloat(stakeAmount) <= 0
+      ) {
+        alert("Pilih token dan masukkan jumlah stake yang valid!");
+        return;
+      }
+      if (parseFloat(stakeAmount) < parseFloat(minEthStake)) {
+        alert(
+          `Jumlah stake harus lebih besar atau sama dengan ${minEthStake} ETH!`
+        );
+        return;
+      }
+      setIsLoading(true);
+      const signer = provider.getSigner();
+      const avs = new ethers.Contract(
+        veristableAVSAddress,
+        VeristableAVSABI,
+        signer
+      );
+      const tx = await avs.stakeForToken(selectedToken, {
+        value: ethers.utils.parseEther(stakeAmount),
+        gasLimit: 300000,
+      });
+      await tx.wait();
+      await updateTokenStakingInfo(selectedToken);
+      setStakeAmount("");
+      alert("ETH berhasil di-stake!");
+    } catch (error) {
+      console.error("Error staking ETH:", error);
+      alert(`Gagal melakukan stake: ${error.reason || error.message}`);
+    } finally {
+      setIsLoading(false);
     }
-  }, [selectedToken, provider, account]);
+  };
+
+  const unstakeFromToken = async () => {
+    try {
+      if (
+        !provider ||
+        !selectedToken ||
+        !unstakeAmount ||
+        parseFloat(unstakeAmount) <= 0
+      ) {
+        alert("Pilih token dan masukkan jumlah unstake yang valid!");
+        return;
+      }
+      if (parseFloat(unstakeAmount) > parseFloat(ethStake)) {
+        alert(
+          `Jumlah unstake tidak boleh melebihi jumlah yang di-stake (${ethStake} ETH)!`
+        );
+        return;
+      }
+      if (contractPaused) {
+        alert("Contract sedang dalam status paused, tidak bisa unstake!");
+        return;
+      }
+      setIsLoading(true);
+      const signer = provider.getSigner();
+      const avs = new ethers.Contract(
+        veristableAVSAddress,
+        VeristableAVSABI,
+        signer
+      );
+      console.log("Unstaking:", {
+        token: selectedToken,
+        amount: ethers.utils.parseEther(unstakeAmount).toString(),
+        userStake: ethStake,
+      });
+      const tx = await avs.unstakeFromToken(
+        selectedToken,
+        ethers.utils.parseEther(unstakeAmount),
+        { gasLimit: 300000 }
+      );
+      await tx.wait();
+      await updateTokenStakingInfo(selectedToken);
+      setUnstakeAmount("");
+      alert("ETH berhasil di-unstake!");
+    } catch (error) {
+      console.error("Error unstaking ETH:", error);
+      alert(
+        `Gagal melakukan unstake: ${
+          error.reason || error.message || "Unknown error"
+        }`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const claimTokenRewards = async () => {
+    try {
+      if (!provider || !selectedToken) {
+        alert("Pilih token terlebih dahulu!");
+        return;
+      }
+      setIsLoading(true);
+      const signer = provider.getSigner();
+      const avs = new ethers.Contract(
+        veristableAVSAddress,
+        VeristableAVSABI,
+        signer
+      );
+      const tx = await avs.claimTokenRewards(selectedToken, {
+        gasLimit: 300000,
+      });
+      await tx.wait();
+      await updateTokenStakingInfo(selectedToken);
+      alert("Rewards berhasil di-claim!");
+    } catch (error) {
+      console.error("Error claiming rewards:", error);
+      alert(
+        `Gagal melakukan claim rewards: ${
+          error.reason || error.message || "Unknown error"
+        }`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const distributeTokenRewards = async () => {
+    try {
+      if (
+        !provider ||
+        !selectedToken ||
+        !depositRewardAmount ||
+        parseFloat(depositRewardAmount) <= 0
+      ) {
+        alert("Pilih token dan masukkan jumlah reward yang valid!");
+        return;
+      }
+      setIsLoading(true);
+      const signer = provider.getSigner();
+      const avs = new ethers.Contract(
+        veristableAVSAddress,
+        VeristableAVSABI,
+        signer
+      );
+      const tx = await avs.distributeTokenRewards(selectedToken, {
+        value: ethers.utils.parseEther(depositRewardAmount),
+        gasLimit: 300000,
+      });
+      await tx.wait();
+      await updateTokenStakingInfo(selectedToken);
+      setDepositRewardAmount("");
+      alert("Rewards berhasil didistribusikan!");
+    } catch (error) {
+      console.error("Error distributing rewards:", error);
+      alert(
+        `Gagal mendistribusikan rewards: ${
+          error.reason || error.message || "Unknown error"
+        }`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Komponen UI
   const TokenSelector = ({ value, onChange }) => (
@@ -631,6 +824,15 @@ const TokenFactory = () => {
       ))}
     </select>
   );
+
+  // Update info saat selectedToken berubah
+  useEffect(() => {
+    if (selectedToken && provider && account) {
+      getReserveBalance(selectedToken);
+      getTokenInfo(selectedToken);
+      updateTokenStakingInfo(selectedToken);
+    }
+  }, [selectedToken, provider, account]);
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
@@ -831,6 +1033,80 @@ const TokenFactory = () => {
                   disabled={isLoading}
                 >
                   {isLoading ? "Processing..." : "Deposit Rewards"}
+                </button>
+              </div>
+            </div>
+
+            {/* Token Staking Section */}
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <h2 className="text-xl font-semibold mb-4">Token Staking</h2>
+              <div className="space-y-4">
+                <TokenSelector
+                  value={selectedToken}
+                  onChange={(e) => setSelectedToken(e.target.value)}
+                />
+                <p>Stake Amount: {ethStake} ETH</p>
+                <p>Total Staked: {totalEthStaked} ETH</p>
+                <p>Pending Rewards: {pendingRewards} ETH</p>
+                <p>Rewards Pool: {ethRewardsPool} ETH</p>
+                <p>Minimum Stake: {minEthStake} ETH</p>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  placeholder="Jumlah ETH untuk Stake"
+                  className="w-full p-2 border rounded"
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={stakeForToken}
+                  className="bg-green-500 text-white px-4 py-2 rounded w-full hover:bg-green-600 disabled:bg-green-300"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Processing..." : "Stake ETH ke Token"}
+                </button>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  placeholder="Jumlah ETH untuk Unstake"
+                  className="w-full p-2 border rounded"
+                  value={unstakeAmount}
+                  onChange={(e) => setUnstakeAmount(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={unstakeFromToken}
+                  className="bg-red-500 text-white px-4 py-2 rounded w-full hover:bg-red-600 disabled:bg-red-300"
+                  disabled={isLoading || parseFloat(ethStake) <= 0}
+                >
+                  {isLoading ? "Processing..." : "Unstake ETH dari Token"}
+                </button>
+                <button
+                  onClick={claimTokenRewards}
+                  className="bg-yellow-500 text-white px-4 py-2 rounded w-full hover:bg-yellow-600 disabled:bg-yellow-300"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Processing..." : "Claim Token Rewards"}
+                </button>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  placeholder="Jumlah Reward ETH"
+                  className="w-full p-2 border rounded"
+                  value={depositRewardAmount}
+                  onChange={(e) => setDepositRewardAmount(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={distributeTokenRewards}
+                  className="bg-cyan-500 text-white px-4 py-2 rounded w-full hover:bg-cyan-600 disabled:bg-cyan-300"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Processing..." : "Distribute Token Rewards"}
                 </button>
               </div>
             </div>
